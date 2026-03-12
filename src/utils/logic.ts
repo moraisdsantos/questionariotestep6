@@ -44,6 +44,12 @@ export function mapObjectiveToOecd(objective: string): string[] {
   return mapping[objective] ?? [];
 }
 
+export function isFullyDigitalForbidden(state: Pick<AppState, 'digitalLiteracy' | 'computerAccess'>): boolean {
+  const lowDigitalLiteracy = state.digitalLiteracy === 'Não' || state.digitalLiteracy === 'Parcial';
+  const noComputerAccess = state.computerAccess === 'Não';
+  return lowDigitalLiteracy && noComputerAccess;
+}
+
 export function deriveModality(state: AppState): Modality | '' {
   if (!state.canGatherInSamePlace) return '';
 
@@ -56,7 +62,10 @@ export function deriveModality(state: AppState): Modality | '' {
   }
 
   if (state.canTravelToTerritory === 'Não') {
-    if (state.hasLocalPartners === 'Não') return 'Digital';
+    if (state.hasLocalPartners === 'Não') {
+      if (isFullyDigitalForbidden(state)) return 'No território';
+      return 'Digital';
+    }
     if (state.hasLocalPartners === 'Sim') {
       if (state.canUseDigitalWithLowExclusion === 'Sim') return 'Mediada/Híbrida';
       if (state.canUseDigitalWithLowExclusion === 'Não') return 'No território';
@@ -94,22 +103,27 @@ export function deriveDepthLevel(detailNeed: string): AppState['depthLevel'] {
 }
 
 export function summarizeProblem(state: AppState): string {
-  const values = Object.values(state.problemResponses).filter(Boolean);
-  if (!values.length) return '';
-  return `Problema qualificado a partir de ${values.length} respostas abertas. A síntese deverá considerar definição do problema, grau de consenso, estabilidade, existência de soluções conhecidas, experiência prévia, subproblemas abordáveis, lacunas de aprendizagem e expectativa quanto ao papel da participação cidadã.`;
-}
+  const r = state.problemResponses;
+  const closed = [
+    r.problemaClaramenteDefinido && `Problema claramente definido: ${r.problemaClaramenteDefinido}`,
+    r.haConsensoEntreAtores && `Há consenso entre atores: ${r.haConsensoEntreAtores}`,
+    r.haCertezaQuantoNatureza && `Há certeza quanto à natureza do problema: ${r.haCertezaQuantoNatureza}`,
+    r.problemaPermaneceMesmo && `Tende a permanecer estável: ${r.problemaPermaneceMesmo}`,
+    r.haSolucoesAceitas && `Há soluções já aceitas: ${r.haSolucoesAceitas}`,
+    r.haExperienciaPrevia && `Há experiência prévia de enfrentamento: ${r.haExperienciaPrevia}`,
+  ].filter(Boolean);
 
-export function hasSensitiveRisk(state: AppState): boolean {
-  return (
-    state.riskNegativeConsequences === 'Sim' ||
-    state.dependsOnEvaluatedInstitution === 'Sim' ||
-    state.mayExposeSensitiveSituations === 'Sim'
-  );
+  const open = [r.problemasMenoresQuePublicoAjuda, r.oQueQuerAprender, r.expectativaAoEnvolverCidadaos, r.desafioEspecificoParticipantes]
+    .filter(Boolean)
+    .join(' ');
+
+  return [...closed, open].filter(Boolean).join('. ').trim();
 }
 
 export function deriveForcedRecommendation(state: AppState): string {
-  if (hasSensitiveRisk(state) && state.canMitigateRisk === 'Não') {
-    return 'Entrevista em profundidade';
-  }
+  const risk = state.riskNegativeConsequences === 'Sim' || state.dependsOnEvaluatedInstitution === 'Sim' || state.mayExposeSensitiveSituations === 'Sim';
+  const notMitigable = state.canMitigateRisk === 'Não';
+
+  if (risk && notMitigable) return 'Entrevista em profundidade';
   return '';
 }
