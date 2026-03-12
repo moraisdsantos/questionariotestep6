@@ -212,3 +212,47 @@ button:disabled {
   .actions-row { flex-direction: column; }
   button { width: 100%; }
 }
+
+.binary-row {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.binary-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid #cad5e2;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.binary-option input {
+  width: auto;
+  margin: 0;
+}
+
+.trace-box {
+  margin-top: 18px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: #f9fbff;
+  border: 1px solid #dbe4f0;
+}
+
+.small-trace {
+  font-size: 0.8rem;
+  color: #5b6b86;
+}
+
+.trace-title {
+  margin: 0 0 8px;
+  font-weight: 700;
+}
+
+.trace-list {
+  margin: 0;
+  padding-left: 16px;
+}
