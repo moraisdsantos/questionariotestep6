@@ -10,11 +10,14 @@ import {
   deriveInputType,
   deriveModality,
   deriveTimeLevel,
+  isFullyDigitalForbidden,
   mapAuditStageToIdeo,
   mapObjectiveToOecd,
   mapPainToFocus,
   summarizeProblem,
 } from './utils/logic';
+
+const yesNoOptions = ['Sim', 'Não'] as const;
 
 const initialProblemResponses: ProblemResponses = {
   problemaClaramenteDefinido: '',
@@ -41,7 +44,6 @@ const initialState: AppState = {
   expectedEvidence: '',
   perceptionsToCollect: '',
   coherenceCheck: '',
-  impactedPerson: '',
   isDirectUser: '',
   policyService: '',
   isVulnerableGroup: '',
@@ -49,10 +51,10 @@ const initialState: AppState = {
   journeyStage: '',
   stateContactMode: '',
   internetAccess: '',
+  computerAccess: '',
   digitalLiteracy: '',
   understandsInstitutionalLanguage: '',
   accessBarriers: '',
-  hasOtherPublics: '',
   desiredScale: '',
   recruitmentMode: '',
   canGatherInSamePlace: '',
@@ -84,6 +86,17 @@ const initialState: AppState = {
 
 const totalSteps = 9;
 
+const variableLinks = [
+  ['Foco da escuta', 'Objetivo'],
+  ['Tipologia IDEO', 'Etapa Design (IDEO)'],
+  ['Tipologia OCDE', 'Tipologia (OCDE)'],
+  ['Modalidade', 'Formato'],
+  ['Tempo disponível / nível de tempo', 'Duração'],
+  ['Escala / amostra', 'Tamanho do Grupo'],
+  ['Capacidades da equipe', 'Habilidades Necessárias'],
+  ['Riscos e barreiras', 'Riscos e Limitações'],
+] as const;
+
 export default function App() {
   const [state, setState] = useState<AppState>(initialState);
   const [step, setStep] = useState(1);
@@ -92,30 +105,25 @@ export default function App() {
   const problemSummary = useMemo(() => summarizeProblem(state), [state]);
   const recommendations = useMemo(() => getRecommendations(state), [state]);
   const topRecommendations = recommendations.slice(0, 5);
+  const digitalOnlyForbidden = useMemo(() => isFullyDigitalForbidden(state), [state]);
 
   const updateState = <K extends keyof AppState>(key: K, value: AppState[K]) => {
     setState((current) => {
       const next = { ...current, [key]: value };
 
-      if (key === 'mainPain') {
-        next.focusOfListening = mapPainToFocus(value as string);
-      }
+      if (key === 'mainPain') next.focusOfListening = mapPainToFocus(value as string);
+      if (key === 'auditStage') next.ideoTypes = mapAuditStageToIdeo(value as AppState['auditStage']);
+      if (key === 'objective') next.oecdTypes = mapObjectiveToOecd(value as string);
 
-      if (key === 'auditStage') {
-        next.ideoTypes = mapAuditStageToIdeo(value as AppState['auditStage']);
-      }
-
-      if (key === 'objective') {
-        next.oecdTypes = mapObjectiveToOecd(value as string);
-      }
-
-      if (key === 'canGatherInSamePlace' || key === 'canTravelToTerritory' || key === 'canUseDigitalWithLowExclusion' || key === 'hasLocalPartners') {
+      if (
+        ['canGatherInSamePlace', 'canTravelToTerritory', 'canUseDigitalWithLowExclusion', 'hasLocalPartners', 'digitalLiteracy', 'computerAccess'].includes(
+          String(key),
+        )
+      ) {
         next.modality = deriveModality(next);
       }
 
-      if (key === 'availableTime') {
-        next.timeLevel = deriveTimeLevel(value as AppState['availableTime']);
-      }
+      if (key === 'availableTime') next.timeLevel = deriveTimeLevel(value as AppState['availableTime']);
 
       if (key === 'inputNeed') {
         next.inputType = deriveInputType(value as string);
@@ -148,7 +156,6 @@ export default function App() {
     if (step === 3) return state.objective !== '' && state.perceptionsToCollect.trim() !== '' && state.coherenceCheck === 'Sim';
     if (step === 4) {
       return (
-        state.impactedPerson.trim() !== '' &&
         state.isDirectUser !== '' &&
         state.policyService.trim() !== '' &&
         state.isVulnerableGroup !== '' &&
@@ -156,15 +163,15 @@ export default function App() {
         state.journeyStage.trim() !== '' &&
         state.stateContactMode !== '' &&
         state.internetAccess !== '' &&
+        state.computerAccess !== '' &&
         state.digitalLiteracy !== '' &&
         state.understandsInstitutionalLanguage !== '' &&
+        state.accessBarriers !== '' &&
         state.desiredScale !== '' &&
         state.recruitmentMode !== ''
       );
     }
-    if (step === 5) {
-      return state.canGatherInSamePlace !== '' && state.modality !== '';
-    }
+    if (step === 5) return state.canGatherInSamePlace !== '' && state.modality !== '';
     if (step === 6) {
       return (
         state.hasFacilitationExperience !== '' &&
@@ -182,17 +189,12 @@ export default function App() {
     }
     if (step === 8) {
       const baseAnswered =
-        state.riskNegativeConsequences !== '' &&
-        state.dependsOnEvaluatedInstitution !== '' &&
-        state.mayExposeSensitiveSituations !== '';
-
+        state.riskNegativeConsequences !== '' && state.dependsOnEvaluatedInstitution !== '' && state.mayExposeSensitiveSituations !== '';
       if (!baseAnswered) return false;
-
       const anyRisk =
         state.riskNegativeConsequences === 'Sim' ||
         state.dependsOnEvaluatedInstitution === 'Sim' ||
         state.mayExposeSensitiveSituations === 'Sim';
-
       return anyRisk ? state.canMitigateRisk !== '' : true;
     }
     return true;
@@ -220,15 +222,31 @@ export default function App() {
     updateState('depthLevel', depthLevel);
   };
 
+  const binaryProblemField = (key: keyof ProblemResponses, label: string) => (
+    <Field label={label}>
+      <div className="binary-row">
+        {yesNoOptions.map((option) => (
+          <label key={`${key}-${option}`} className="binary-option">
+            <input
+              type="radio"
+              name={key}
+              checked={state.problemResponses[key] === option}
+              onChange={() => updateProblem(key, option)}
+            />
+            <span>{option}</span>
+          </label>
+        ))}
+      </div>
+    </Field>
+  );
+
   return (
     <div className="app-shell">
       <header className="hero">
         <div>
           <p className="eyebrow">Toolkit de Escuta Cidadã</p>
           <h1>Quiz de decisão para auditorias</h1>
-          <p className="hero-copy">
-            Projeto pronto em React + Vite, com fluxo condicional baseado no algoritmo de linguagem natural e preparado para GitHub Pages.
-          </p>
+          <p className="hero-copy">Projeto pronto em React + Vite, com fluxo condicional baseado no algoritmo de linguagem natural e preparado para GitHub Pages.</p>
         </div>
       </header>
 
@@ -245,6 +263,20 @@ export default function App() {
             <li><strong>Recomendação forçada:</strong> {state.forcedRecommendation || '—'}</li>
             <li><strong>Top método:</strong> {topRecommendations[0]?.method.name || '—'}</li>
           </ul>
+
+          <div className="trace-box small-trace">
+            <p className="trace-title">Variáveis definidas e conexão com a ficha técnica</p>
+            <ul className="trace-list">
+              <li>Foco: {state.focusOfListening || '—'} → Objetivo</li>
+              <li>IDEO: {state.ideoTypes.join(', ') || '—'} → Etapa Design</li>
+              <li>OCDE: {state.oecdTypes.join(', ') || '—'} → Tipologia OCDE</li>
+              <li>Modalidade: {state.modality || '—'} → Formato</li>
+              <li>Tempo: {state.timeLevel || '—'} → Duração</li>
+              <li>Escala: {state.sampleSize || state.desiredScale || '—'} → Tamanho do grupo</li>
+              <li>Capacidades → Habilidades necessárias</li>
+              <li>Riscos/barreiras → Riscos e limitações</li>
+            </ul>
+          </div>
         </aside>
 
         <section>
@@ -258,69 +290,48 @@ export default function App() {
                 </select>
               </Field>
 
-              {state.canParticipationHelp === 'Não' && (
-                <div className="alert warning">
-                  O fluxo é encerrado porque a escuta cidadã foi considerada não pertinente para este problema.
-                </div>
-              )}
-
-              {state.canParticipationHelp === 'Sim' && (
-                <div className="alert success">A escuta cidadã foi considerada pertinente. O fluxo segue para a qualificação do problema.</div>
-              )}
+              {state.canParticipationHelp === 'Não' && <div className="alert warning">O fluxo é encerrado porque a escuta cidadã foi considerada não pertinente para este problema.</div>}
+              {state.canParticipationHelp === 'Sim' && <div className="alert success">A escuta cidadã foi considerada pertinente. O fluxo segue para a qualificação do problema.</div>}
             </StepCard>
           )}
 
           {step === 2 && (
-            <StepCard title="Qualificação do problema e definição do foco" subtitle="As perguntas abertas não determinam o fluxo, mas produzem a síntese analítica do problema.">
+            <StepCard title="Qualificação do problema e definição do foco" subtitle="As 6 primeiras perguntas foram convertidas em respostas de sim ou não; os demais campos seguem abertos para síntese do problema.">
               <div className="two-columns">
-                <Field label="O problema que você está enfrentando está claramente definido?">
-                  <textarea value={state.problemResponses.problemaClaramenteDefinido} onChange={(e) => updateProblem('problemaClaramenteDefinido', e.target.value)} />
-                </Field>
-                <Field label="Há consenso sobre o problema entre diferentes atores?">
-                  <textarea value={state.problemResponses.haConsensoEntreAtores} onChange={(e) => updateProblem('haConsensoEntreAtores', e.target.value)} />
-                </Field>
-                <Field label="Há certeza quanto à natureza do problema?">
-                  <textarea value={state.problemResponses.haCertezaQuantoNatureza} onChange={(e) => updateProblem('haCertezaQuantoNatureza', e.target.value)} />
-                </Field>
-                <Field label="É provável que o problema permaneça o mesmo ao longo do processo de solução?">
-                  <textarea value={state.problemResponses.problemaPermaneceMesmo} onChange={(e) => updateProblem('problemaPermaneceMesmo', e.target.value)} />
-                </Field>
-                <Field label="Existem soluções já existentes e amplamente aceitas?">
-                  <textarea value={state.problemResponses.haSolucoesAceitas} onChange={(e) => updateProblem('haSolucoesAceitas', e.target.value)} />
-                </Field>
-                <Field label="Há experiência prévia no enfrentamento desse problema?">
-                  <textarea value={state.problemResponses.haExperienciaPrevia} onChange={(e) => updateProblem('haExperienciaPrevia', e.target.value)} />
-                </Field>
-                <Field label="Se o problema for amplo, quais problemas menores o público pode ajudar a abordar?">
+                {binaryProblemField('problemaClaramenteDefinido', 'O problema que você está enfrentando está claramente definido?')}
+                {binaryProblemField('haConsensoEntreAtores', 'Há consenso sobre o problema entre diferentes atores?')}
+                {binaryProblemField('haCertezaQuantoNatureza', 'Há certeza quanto à natureza do problema?')}
+                {binaryProblemField('problemaPermaneceMesmo', 'É provável que o problema permaneça o mesmo ao longo do processo de solução?')}
+                {binaryProblemField('haSolucoesAceitas', 'Existem soluções já existentes e amplamente aceitas?')}
+                {binaryProblemField('haExperienciaPrevia', 'Há experiência prévia no enfrentamento desse problema?')}
+                <Field label="Se o problema ou desafio for amplo, quais são alguns dos problemas menores que o público pode ajudar a abordar?">
                   <textarea value={state.problemResponses.problemasMenoresQuePublicoAjuda} onChange={(e) => updateProblem('problemasMenoresQuePublicoAjuda', e.target.value)} />
                 </Field>
                 <Field label="O que você quer aprender com os participantes que você ainda não sabe?">
                   <textarea value={state.problemResponses.oQueQuerAprender} onChange={(e) => updateProblem('oQueQuerAprender', e.target.value)} />
                 </Field>
-                <Field label="O que você espera ao envolver cidadãos?">
+                <Field label="O que você espera ao envolver cidadãos? Ideias, soluções, opiniões, feedback?">
                   <textarea value={state.problemResponses.expectativaAoEnvolverCidadaos} onChange={(e) => updateProblem('expectativaAoEnvolverCidadaos', e.target.value)} />
                 </Field>
                 <Field label="Que problema ou desafio específico os participantes ajudarão a resolver?">
                   <textarea value={state.problemResponses.desafioEspecificoParticipantes} onChange={(e) => updateProblem('desafioEspecificoParticipantes', e.target.value)} />
                 </Field>
+                <Field label="Qual é a principal dor que justifica a escuta?">
+                  <select value={state.mainPain} onChange={(e) => updateState('mainPain', e.target.value)}>
+                    <option value="">Selecione</option>
+                    {painOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+                  </select>
+                </Field>
+                <Field label="Qual é a etapa da auditoria?">
+                  <select value={state.auditStage} onChange={(e) => updateState('auditStage', e.target.value as AppState['auditStage'])}>
+                    <option value="">Selecione</option>
+                    {auditStageOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+                  </select>
+                </Field>
               </div>
 
-              <Field label="Qual é a principal dor que justifica a escuta?">
-                <select value={state.mainPain} onChange={(e) => updateState('mainPain', e.target.value)}>
-                  <option value="">Selecione</option>
-                  {painOptions.map((option) => <option key={option} value={option}>{option}</option>)}
-                </select>
-              </Field>
-
-              <Field label="Qual é a etapa da auditoria?">
-                <select value={state.auditStage} onChange={(e) => updateState('auditStage', e.target.value as AppState['auditStage'])}>
-                  <option value="">Selecione</option>
-                  {auditStageOptions.map((option) => <option key={option} value={option}>{option}</option>)}
-                </select>
-              </Field>
-
               <div className="derived-box">
-                <p><strong>Tipo de problema:</strong> {problemSummary || 'Será sintetizado a partir das respostas abertas.'}</p>
+                <p><strong>Tipo de problema:</strong> {problemSummary || '—'}</p>
                 <p><strong>Foco da escuta:</strong> {state.focusOfListening || '—'}</p>
                 <p><strong>Tipologia IDEO:</strong> {state.ideoTypes.join(', ') || '—'}</p>
               </div>
@@ -328,23 +339,20 @@ export default function App() {
           )}
 
           {step === 3 && (
-            <StepCard title="Objetivo da escuta e validação de coerência" subtitle="Define o que a escuta deve produzir como evidência tangível.">
-              <Field label="Qual é o objetivo da escuta?" hint="Defina as expectativas da escuta: quais dados ou evidências tangíveis serão obtidas?">
-                <select value={state.objective} onChange={(e) => updateState('objective', e.target.value)}>
-                  <option value="">Selecione</option>
-                  {objectiveOptions.map((option) => <option key={option} value={option}>{option}</option>)}
-                </select>
-              </Field>
+            <StepCard title="Objetivo da escuta e evidências esperadas" subtitle="Define tipologia OCDE, percepções a coletar e coerência com a dor identificada.">
+              <div className="two-columns">
+                <Field label="Qual é o objetivo da escuta?" hint="Defina as expectativas da escuta: quais dados ou evidências tangíveis serão obtidas?">
+                  <select value={state.objective} onChange={(e) => updateState('objective', e.target.value)}>
+                    <option value="">Selecione</option>
+                    {objectiveOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+                  </select>
+                </Field>
+                <Field label="Quais percepções serão coletadas?" hint="Ex.: respostas sim/não, relatos escritos, relatos verbais, fotografias, mapas, prioridades.">
+                  <textarea value={state.perceptionsToCollect} onChange={(e) => updateState('perceptionsToCollect', e.target.value)} />
+                </Field>
+              </div>
 
-              <Field label="Descreva as evidências tangíveis esperadas da escuta">
-                <textarea value={state.expectedEvidence} onChange={(e) => updateState('expectedEvidence', e.target.value)} />
-              </Field>
-
-              <Field label="Quais percepções serão coletadas?" hint="Ex.: sim/não, relatos escritos, relatos verbais, fotografias, registros audiovisuais, mapas, prioridades.">
-                <textarea value={state.perceptionsToCollect} onChange={(e) => updateState('perceptionsToCollect', e.target.value)} />
-              </Field>
-
-              <Field label="A percepção esperada comunica com a dor e o foco da escuta estabelecidos na etapa anterior?">
+              <Field label="A percepção esperada comunica com a dor e o foco da escuta estabelecido na etapa 1?">
                 <select value={state.coherenceCheck} onChange={(e) => updateState('coherenceCheck', e.target.value as AppState['coherenceCheck'])}>
                   <option value="">Selecione</option>
                   <option value="Sim">Sim</option>
@@ -352,9 +360,7 @@ export default function App() {
                 </select>
               </Field>
 
-              {state.coherenceCheck === 'Não' && (
-                <div className="alert warning">Reavalie o objetivo da escuta. O fluxo não avança até que a coerência seja confirmada.</div>
-              )}
+              {state.coherenceCheck === 'Não' && <div className="alert warning">Reavalie o objetivo da escuta. O fluxo só avança quando houver coerência entre dor, foco e percepção esperada.</div>}
 
               <div className="derived-box">
                 <p><strong>Tipologia OCDE:</strong> {state.oecdTypes.join(', ') || '—'}</p>
@@ -363,33 +369,26 @@ export default function App() {
           )}
 
           {step === 4 && (
-            <StepCard title="Perfil do público afetado" subtitle="Delimita quem é afetado, em que jornada e com quais barreiras de acesso.">
+            <StepCard title="Perfil social, jornada e barreiras" subtitle="Delimita o público, o ponto da jornada e as restrições de acesso.">
               <div className="two-columns">
-                <Field label="Quem é a pessoa diretamente impactada pelo problema investigado?">
-                  <textarea value={state.impactedPerson} onChange={(e) => updateState('impactedPerson', e.target.value)} />
-                </Field>
-                <Field label="Ela é usuária direta do serviço ou atua como intermediária?">
+                <Field label="O público é usuário direto do serviço ou atua como intermediário?">
                   <select value={state.isDirectUser} onChange={(e) => updateState('isDirectUser', e.target.value as AppState['isDirectUser'])}>
                     <option value="">Selecione</option>
-                    <option value="Usuária direta">Usuária direta</option>
-                    <option value="Intermediária">Intermediária</option>
+                    <option value="Usuário direto">Usuário direto</option>
+                    <option value="Intermediário">Intermediário</option>
                   </select>
                 </Field>
-                <Field label="Em qual política, programa ou serviço essa pessoa interage com o Estado?">
+                <Field label="Em qual política, programa ou serviço esse público interage com o Estado?">
                   <textarea value={state.policyService} onChange={(e) => updateState('policyService', e.target.value)} />
                 </Field>
                 <Field label="Esse público integra grupo historicamente vulnerabilizado?">
                   <select value={state.isVulnerableGroup} onChange={(e) => updateState('isVulnerableGroup', e.target.value as AppState['isVulnerableGroup'])}>
-                    <option value="">Selecione</option>
-                    <option value="Sim">Sim</option>
-                    <option value="Não">Não</option>
+                    <option value="">Selecione</option><option value="Sim">Sim</option><option value="Não">Não</option>
                   </select>
                 </Field>
                 <Field label="Esse público depende fortemente da política pública analisada?">
                   <select value={state.dependsOnPolicy} onChange={(e) => updateState('dependsOnPolicy', e.target.value as AppState['dependsOnPolicy'])}>
-                    <option value="">Selecione</option>
-                    <option value="Sim">Sim</option>
-                    <option value="Não">Não</option>
+                    <option value="">Selecione</option><option value="Sim">Sim</option><option value="Não">Não</option>
                   </select>
                 </Field>
                 <Field label="Em que etapa da jornada da cidadã a escuta deve ocorrer?">
@@ -406,58 +405,43 @@ export default function App() {
                 </Field>
                 <Field label="O público possui acesso regular à internet ou a dispositivos digitais?">
                   <select value={state.internetAccess} onChange={(e) => updateState('internetAccess', e.target.value as AppState['internetAccess'])}>
-                    <option value="">Selecione</option>
-                    <option value="Sim">Sim</option>
-                    <option value="Parcial">Parcial</option>
-                    <option value="Não">Não</option>
+                    <option value="">Selecione</option><option value="Sim">Sim</option><option value="Parcial">Parcial</option><option value="Não">Não</option>
+                  </select>
+                </Field>
+                <Field label="O público tem acesso a computadores para responder online com autonomia?">
+                  <select value={state.computerAccess} onChange={(e) => updateState('computerAccess', e.target.value as AppState['computerAccess'])}>
+                    <option value="">Selecione</option><option value="Sim">Sim</option><option value="Parcial">Parcial</option><option value="Não">Não</option>
                   </select>
                 </Field>
                 <Field label="O letramento digital é suficiente para responder questionários online ou usar aplicativos?">
                   <select value={state.digitalLiteracy} onChange={(e) => updateState('digitalLiteracy', e.target.value as AppState['digitalLiteracy'])}>
-                    <option value="">Selecione</option>
-                    <option value="Sim">Sim</option>
-                    <option value="Parcial">Parcial</option>
-                    <option value="Não">Não</option>
+                    <option value="">Selecione</option><option value="Sim">Sim</option><option value="Parcial">Parcial</option><option value="Não">Não</option>
                   </select>
                 </Field>
                 <Field label="Há facilidade para compreender linguagem institucional ou técnica?">
                   <select value={state.understandsInstitutionalLanguage} onChange={(e) => updateState('understandsInstitutionalLanguage', e.target.value as AppState['understandsInstitutionalLanguage'])}>
-                    <option value="">Selecione</option>
-                    <option value="Sim">Sim</option>
-                    <option value="Parcial">Parcial</option>
-                    <option value="Não">Não</option>
+                    <option value="">Selecione</option><option value="Sim">Sim</option><option value="Parcial">Parcial</option><option value="Não">Não</option>
                   </select>
                 </Field>
                 <Field label="Existem barreiras linguísticas, educacionais, culturais ou territoriais relevantes?">
-                  <textarea value={state.accessBarriers} onChange={(e) => updateState('accessBarriers', e.target.value)} />
-                </Field>
-                <Field label="Há outros públicos atingidos pelo problema?">
-                  <select value={state.hasOtherPublics} onChange={(e) => updateState('hasOtherPublics', e.target.value as AppState['hasOtherPublics'])}>
-                    <option value="">Selecione</option>
-                    <option value="Sim">Sim</option>
-                    <option value="Não">Não</option>
+                  <select value={state.accessBarriers} onChange={(e) => updateState('accessBarriers', e.target.value as AppState['accessBarriers'])}>
+                    <option value="">Selecione</option><option value="Sim">Sim</option><option value="Não">Não</option>
                   </select>
                 </Field>
                 <Field label="O problema afeta muitas pessoas em diferentes territórios ou um grupo específico em contexto delimitado?">
                   <select value={state.desiredScale} onChange={(e) => updateState('desiredScale', e.target.value as AppState['desiredScale'])}>
-                    <option value="">Selecione</option>
-                    <option value="Geral">Geral</option>
-                    <option value="Localizada">Localizada</option>
+                    <option value="">Selecione</option><option value="Geral">Geral</option><option value="Localizada">Localizada</option>
                   </select>
                 </Field>
                 <Field label="Como o público será selecionado?">
                   <select value={state.recruitmentMode} onChange={(e) => updateState('recruitmentMode', e.target.value as AppState['recruitmentMode'])}>
-                    <option value="">Selecione</option>
-                    <option value="Chamamento fechado">Chamamento fechado</option>
-                    <option value="Chamamento aberto">Chamamento aberto</option>
-                    <option value="Loteria cívica">Loteria cívica</option>
+                    <option value="">Selecione</option><option value="Chamamento fechado">Chamamento fechado</option><option value="Chamamento aberto">Chamamento aberto</option><option value="Loteria cívica">Loteria cívica</option>
                   </select>
                 </Field>
               </div>
 
-              {state.isVulnerableGroup === 'Sim' && (
-                <div className="alert info">Observar os grupos de interesse definidos pela Estratégia de Controle de Equidade em Políticas Públicas.</div>
-              )}
+              {state.isVulnerableGroup === 'Sim' && <div className="alert info">Observar os grupos de interesse definidos pela Estratégia de Controle de Equidade em Políticas Públicas.</div>}
+              {digitalOnlyForbidden && <div className="alert warning">Com letramento digital baixo/parcial e sem acesso adequado a computadores, o método não poderá ser completamente digital.</div>}
             </StepCard>
           )}
 
@@ -466,9 +450,7 @@ export default function App() {
               <div className="two-columns">
                 <Field label="É possível reunir o público-alvo em um mesmo local para uma atividade de escuta?">
                   <select value={state.canGatherInSamePlace} onChange={(e) => updateState('canGatherInSamePlace', e.target.value as AppState['canGatherInSamePlace'])}>
-                    <option value="">Selecione</option>
-                    <option value="Sim">Sim</option>
-                    <option value="Não">Não</option>
+                    <option value="">Selecione</option><option value="Sim">Sim</option><option value="Não">Não</option>
                   </select>
                 </Field>
 
@@ -476,18 +458,14 @@ export default function App() {
                   <>
                     <Field label="A equipe pode viajar ou ir ao território onde estão os usuários?">
                       <select value={state.canTravelToTerritory} onChange={(e) => updateState('canTravelToTerritory', e.target.value as AppState['canTravelToTerritory'])}>
-                        <option value="">Selecione</option>
-                        <option value="Sim">Sim</option>
-                        <option value="Não">Não</option>
+                        <option value="">Selecione</option><option value="Sim">Sim</option><option value="Não">Não</option>
                       </select>
                     </Field>
 
                     {state.canTravelToTerritory === 'Sim' && (
                       <Field label="A escuta pode utilizar meios digitais mediados por atividades presenciais sem exclusão significativa de usuários?">
                         <select value={state.canUseDigitalWithLowExclusion} onChange={(e) => updateState('canUseDigitalWithLowExclusion', e.target.value as AppState['canUseDigitalWithLowExclusion'])}>
-                          <option value="">Selecione</option>
-                          <option value="Sim">Sim</option>
-                          <option value="Não">Não</option>
+                          <option value="">Selecione</option><option value="Sim">Sim</option><option value="Não">Não</option>
                         </select>
                       </Field>
                     )}
@@ -496,18 +474,14 @@ export default function App() {
                       <>
                         <Field label="Há parceiros locais capazes de apoiar a mobilização ou a facilitação?">
                           <select value={state.hasLocalPartners} onChange={(e) => updateState('hasLocalPartners', e.target.value as AppState['hasLocalPartners'])}>
-                            <option value="">Selecione</option>
-                            <option value="Sim">Sim</option>
-                            <option value="Não">Não</option>
+                            <option value="">Selecione</option><option value="Sim">Sim</option><option value="Não">Não</option>
                           </select>
                         </Field>
 
                         {state.hasLocalPartners === 'Sim' && (
                           <Field label="É possível usar meios digitais com mediação presencial sem exclusão significativa?">
                             <select value={state.canUseDigitalWithLowExclusion} onChange={(e) => updateState('canUseDigitalWithLowExclusion', e.target.value as AppState['canUseDigitalWithLowExclusion'])}>
-                              <option value="">Selecione</option>
-                              <option value="Sim">Sim</option>
-                              <option value="Não">Não</option>
+                              <option value="">Selecione</option><option value="Sim">Sim</option><option value="Não">Não</option>
                             </select>
                           </Field>
                         )}
@@ -519,6 +493,7 @@ export default function App() {
 
               <div className="derived-box">
                 <p><strong>Modalidade derivada:</strong> {state.modality || '—'}</p>
+                {digitalOnlyForbidden && <p><strong>Regra aplicada:</strong> formato completamente digital bloqueado para a recomendação final.</p>}
               </div>
 
               {state.modality === 'Mediada/Híbrida' && (
@@ -576,17 +551,12 @@ export default function App() {
                 </Field>
                 <Field label="Quanto tempo está disponível para preparar a escuta?">
                   <select value={state.availableTime} onChange={(e) => updateState('availableTime', e.target.value as AppState['availableTime'])}>
-                    <option value="">Selecione</option>
-                    <option value="Até 2 semanas">Até 2 semanas</option>
-                    <option value="3 a 8 semanas">3 a 8 semanas</option>
-                    <option value="Mais de 8 semanas">Mais de 8 semanas</option>
+                    <option value="">Selecione</option><option value="Até 2 semanas">Até 2 semanas</option><option value="3 a 8 semanas">3 a 8 semanas</option><option value="Mais de 8 semanas">Mais de 8 semanas</option>
                   </select>
                 </Field>
               </div>
 
-              <div className="derived-box">
-                <p><strong>Nível de tempo:</strong> {state.timeLevel || '—'}</p>
-              </div>
+              <div className="derived-box"><p><strong>Nível de tempo:</strong> {state.timeLevel || '—'}</p></div>
             </StepCard>
           )}
 
@@ -602,10 +572,7 @@ export default function App() {
               {state.inputType === 'Quantitativo' && (
                 <Field label="Quantas pessoas precisam ser ouvidas para responder à pergunta da auditoria?">
                   <select value={state.sampleSize} onChange={(e) => updateState('sampleSize', e.target.value as AppState['sampleSize'])}>
-                    <option value="">Selecione</option>
-                    <option value="Até 50 respostas">Até 50 respostas</option>
-                    <option value="50 a 300 respostas">50 a 300 respostas</option>
-                    <option value="Mais de 300 respostas">Mais de 300 respostas</option>
+                    <option value="">Selecione</option><option value="Até 50 respostas">Até 50 respostas</option><option value="50 a 300 respostas">50 a 300 respostas</option><option value="Mais de 300 respostas">Mais de 300 respostas</option>
                   </select>
                 </Field>
               )}
@@ -613,9 +580,7 @@ export default function App() {
               {state.inputType === 'Qualitativo + Quantitativo' && (
                 <Field label="Qual dimensão é mais importante neste momento da auditoria?">
                   <select value={state.mixedPriority} onChange={(e) => updateState('mixedPriority', e.target.value as AppState['mixedPriority'])}>
-                    <option value="">Selecione</option>
-                    <option value="Escala">Escala</option>
-                    <option value="Profundidade">Profundidade</option>
+                    <option value="">Selecione</option><option value="Escala">Escala</option><option value="Profundidade">Profundidade</option>
                   </select>
                 </Field>
               )}
@@ -623,10 +588,7 @@ export default function App() {
               {state.inputType === 'Qualitativo' && (
                 <Field label="Qual nível de detalhe é necessário sobre a experiência da pessoa cidadã?">
                   <select value={qualitativeDetail} onChange={(e) => setDepthFromDetail(e.target.value)}>
-                    <option value="">Selecione</option>
-                    <option value="Relatos curtos ou comentários">Relatos curtos ou comentários</option>
-                    <option value="Conversa estruturada sobre a experiência">Conversa estruturada sobre a experiência</option>
-                    <option value="Compreensão detalhada da jornada e do contexto">Compreensão detalhada da jornada e do contexto</option>
+                    <option value="">Selecione</option><option value="Relatos curtos ou comentários">Relatos curtos ou comentários</option><option value="Conversa estruturada sobre a experiência">Conversa estruturada sobre a experiência</option><option value="Compreensão detalhada da jornada e do contexto">Compreensão detalhada da jornada e do contexto</option>
                   </select>
                 </Field>
               )}
@@ -666,11 +628,7 @@ export default function App() {
                 </Field>
               )}
 
-              {state.forcedRecommendation && (
-                <div className="alert warning">
-                  Há risco não mitigável. Recomendar sempre: <strong>{state.forcedRecommendation}</strong>.
-                </div>
-              )}
+              {state.forcedRecommendation && <div className="alert warning">Há risco não mitigável. Recomendar sempre: <strong>{state.forcedRecommendation}</strong>.</div>}
             </StepCard>
           )}
 
@@ -683,7 +641,7 @@ export default function App() {
                 <div className="result-card"><h3>Tipologia IDEO</h3><p>{state.ideoTypes.join(', ') || '—'}</p></div>
                 <div className="result-card"><h3>Objetivo</h3><p>{state.objective || '—'}</p></div>
                 <div className="result-card"><h3>Tipologia OCDE</h3><p>{state.oecdTypes.join(', ') || '—'}</p></div>
-                <div className="result-card"><h3>Público e jornada</h3><p>{state.impactedPerson || '—'} / {state.journeyStage || '—'}</p></div>
+                <div className="result-card"><h3>Público e jornada</h3><p>{state.isDirectUser || '—'} / {state.journeyStage || '—'}</p></div>
                 <div className="result-card"><h3>Modalidade</h3><p>{state.modality || '—'}</p></div>
                 <div className="result-card"><h3>Tempo disponível</h3><p>{state.availableTime || '—'} ({state.timeLevel || '—'})</p></div>
                 <div className="result-card"><h3>Tipo de insumo</h3><p>{state.inputType || '—'}</p></div>
@@ -691,17 +649,10 @@ export default function App() {
                 <div className="result-card full"><h3>Percepções a coletar</h3><p>{state.perceptionsToCollect || '—'}</p></div>
               </div>
 
-              <div className="subpanel">
-                <h3>Relações traçadas com a ficha técnica</h3>
-                <ul className="summary-list">
-                  <li><strong>Foco da escuta</strong> conversa com o campo <strong>Objetivo</strong>.</li>
-                  <li><strong>Tipologia IDEO</strong> conversa com <strong>Etapa Design (IDEO)</strong>.</li>
-                  <li><strong>Tipologia OCDE</strong> conversa com <strong>Tipologia (OCDE)</strong>.</li>
-                  <li><strong>Modalidade</strong> conversa com <strong>Formato</strong>.</li>
-                  <li><strong>Tempo disponível</strong> conversa com <strong>Duração</strong>.</li>
-                  <li><strong>Escala/amostra</strong> conversa com <strong>Tamanho do Grupo</strong>.</li>
-                  <li><strong>Capacidades da equipe</strong> conversam com <strong>Habilidades Necessárias</strong>.</li>
-                  <li><strong>Riscos e barreiras</strong> conversam com <strong>Riscos e Limitações</strong>.</li>
+              <div className="trace-box">
+                <p className="trace-title">Variáveis definidas e conexão com as variáveis de produto</p>
+                <ul className="trace-list">
+                  {variableLinks.map(([from, to]) => <li key={`${from}-${to}`}>{from} → {to}</li>)}
                 </ul>
               </div>
 
