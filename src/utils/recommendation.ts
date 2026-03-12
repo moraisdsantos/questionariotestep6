@@ -1,5 +1,6 @@
 import { methods } from '../data/methods';
 import type { AppState, MethodRecord, RecommendationResult } from '../types';
+import { isFullyDigitalForbidden } from './logic';
 
 function splitList(value: string): string[] {
   return value
@@ -81,7 +82,7 @@ function sampleCompatible(state: AppState, method: MethodRecord): boolean {
 
 function digitalPenalty(state: AppState, method: MethodRecord): boolean {
   const onlineOnly = method.format.toLowerCase().includes('online');
-  const lowDigitalAccess = state.internetAccess === 'Não' || state.digitalLiteracy === 'Não';
+  const lowDigitalAccess = state.internetAccess === 'Não' || state.digitalLiteracy === 'Não' || state.computerAccess === 'Não';
   return onlineOnly && lowDigitalAccess;
 }
 
@@ -197,6 +198,11 @@ function scoreMethod(state: AppState, method: MethodRecord): RecommendationResul
   if (digitalPenalty(state, method)) {
     score -= 12;
     cautions.push('Depende fortemente de ambiente online, mas o público indicou barreiras de acesso ou letramento digital.');
+  }
+
+  if (isFullyDigitalForbidden(state) && method.format.toLowerCase().includes('online') && !method.format.toLowerCase().includes('híbrido')) {
+    score -= 30;
+    cautions.push('Método integralmente digital foi despriorizado: o público tem letramento digital baixo/parcial e não possui acesso adequado a computadores.');
   }
 
   const penalties = capabilityPenalty(state, method);
